@@ -9,3 +9,4 @@ pyproj
 aquacrop
 xlwings
 shapely
+gcloud
