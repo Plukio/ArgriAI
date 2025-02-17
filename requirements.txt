@@ -8,3 +8,4 @@ streamlit-folium
 pyproj
 aquacrop
 xlwings
+shapely
