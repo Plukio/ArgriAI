@@ -1,6 +1,10 @@
 streamlit
+requests
+earthengine-api
+pandas
+numpy
 folium
 streamlit-folium
-shapely
 pyproj
-geopy
+aquacrop
+xlwings
