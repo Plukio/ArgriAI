@@ -1,3 +1,5 @@
+import os
+import json
 import streamlit as st
 import requests
 import ee
@@ -11,14 +13,34 @@ from shapely.ops import transform
 from pyproj import Transformer
 import xlwings as xw
 
-# Initialize Earth Engine
+# ============================================================
+# OAuth 2.0 Initialization for Google Earth Engine using st.secrets
+# ============================================================
+if "gg_earth_engine" in st.secrets:
+    credentials = {
+        "client_id": st.secrets["gg_earth_engine"]["client_id"],
+        "project_id": st.secrets["gg_earth_engine"]["project_id"],
+        "auth_uri": st.secrets["gg_earth_engine"]["auth_uri"],
+        "token_uri": st.secrets["gg_earth_engine"]["token_uri"],
+        "auth_provider_x509_cert_url": st.secrets["gg_earth_engine"]["auth_provider_x509_cert_url"],
+        "client_secret": st.secrets["gg_earth_engine"]["client_secret"]
+    }
+    with open("credentials.json", "w") as f:
+        json.dump(credentials, f)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json"
+else:
+    st.error("Google Earth Engine credentials not found in st.secrets.")
+
 try:
     ee.Initialize()
+    st.success("Google Earth Engine initialized successfully!")
 except Exception as e:
-    ee.Authenticate()
-    ee.Initialize()
+    st.error("Error initializing Earth Engine: " + str(e))
+    st.stop()
 
-# ---------- Weather Data Fetching ----------
+# ============================================================
+# Weather Data Module
+# ============================================================
 def fetch_full_weather_nasa(lat, lon, start_date, end_date):
     base_url = "https://power.larc.nasa.gov/api/temporal/daily/point"
     start_str = start_date.strftime("%Y%m%d")
@@ -59,7 +81,9 @@ def fetch_full_weather_nasa(lat, lon, start_date, end_date):
         st.error("Error fetching weather data from NASA POWER.")
         return None
 
-# ---------- Remote Sensing: NDVI ----------
+# ============================================================
+# Remote Sensing Module
+# ============================================================
 def fetch_ndvi(lat, lon, start_date, end_date):
     point = ee.Geometry.Point(lon, lat)
     collection = ee.ImageCollection("COPERNICUS/S2_SR")\
@@ -79,35 +103,62 @@ def fetch_ndvi(lat, lon, start_date, end_date):
     ndvi_value = mean_dict.get("NDVI").getInfo()
     return ndvi_value
 
-# ---------- Field Delineation ----------
+def fetch_etref_nasa(lat, lon, start_date, end_date):
+    base_url = "https://power.larc.nasa.gov/api/temporal/daily/point"
+    start_str = start_date.strftime("%Y%m%d")
+    end_str = end_date.strftime("%Y%m%d")
+    params = {
+        "parameters": "PET",
+        "community": "RE",
+        "longitude": lon,
+        "latitude": lat,
+        "start": start_str,
+        "end": end_str,
+        "format": "JSON",
+    }
+    response = requests.get(base_url, params=params)
+    if response.status_code == 200:
+        data = response.json()
+        try:
+            pet_data = data["properties"]["parameter"]["PET"]
+            pet_values = list(pet_data.values())
+            avg_pet = sum(pet_values) / len(pet_values)
+            return avg_pet
+        except Exception as e:
+            st.error("Error parsing NASA POWER ET₀ data.")
+            return None
+    else:
+        st.error("Error fetching ET₀ data from NASA POWER.")
+        return None
+
+# ============================================================
+# Field Module
+# ============================================================
 def calculate_polygon_area(geojson):
     geom = shape(geojson)
     transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
     projected_geom = transform(transformer.transform, geom)
     area_m2 = projected_geom.area
-    return area_m2 / 10000.0  # hectares
+    return area_m2 / 10000.0  # converts m² to hectares
 
-# ---------- AquaCrop-OSPy Simulation Function ----------
+# ============================================================
+# AquaCrop Simulation Module (using AquaCrop-OSPy)
+# ============================================================
 def run_aquacrop_simulation_ospy(weather_df, planting_date, sim_duration_days, crop_type, soil_type):
     sim_start_date = planting_date
     plant_date_obj = datetime.strptime(planting_date, "%Y/%m/%d").date()
     sim_end_date_obj = plant_date_obj + timedelta(days=sim_duration_days)
     sim_end_date = sim_end_date_obj.strftime("%Y/%m/%d")
     
-    # Open the AquaCrop-OSPy Excel model (update the file path as needed)
     try:
         wb = xw.Book("Aquacrop_Model.xlsx")
         sht_input = wb.sheets["Inputs"]
-        
-        # Write input parameters (adjust cell references to your model)
+        # Write input parameters. Adjust these cell references to your actual model.
         sht_input.range("B2").value = sim_start_date
         sht_input.range("B3").value = crop_type
-        sht_input.range("B4").value = weather_df.to_csv(index=True)  # example: writing CSV string
+        sht_input.range("B4").value = weather_df.to_csv(index=True)
         sht_input.range("B5").value = soil_type
-        
-        # Trigger recalculation
         wb.app.calculate()
-        
         sht_output = wb.sheets["Outputs"]
         ET_crop = sht_output.range("B2").value  # e.g., crop ET from cell B2
         wb.close()
@@ -116,7 +167,9 @@ def run_aquacrop_simulation_ospy(weather_df, planting_date, sim_duration_days, c
         st.error(f"Error running AquaCrop simulation: {e}")
         return None
 
-# ---------- Kcb Calculation for Rice ----------
+# ============================================================
+# Kcb & Irrigation Module
+# ============================================================
 def calculate_kcb_from_ndvi(ndvi, crop="Rice"):
     params = {
         "Rice": {"Kcb_max": 1.00, "Kcb_min": 0.15, "VI_max": 0.90, "VI_min": 0.10, "eta": 1.0},
@@ -134,7 +187,9 @@ def calculate_irrigation(et0, Kcb, field_area, efficiency):
     gross_irrigation = net_irrigation / (efficiency / 100.0)
     return ET_crop_calc, net_irrigation, gross_irrigation
 
-# ---------- Crop Customization Page ----------
+# ============================================================
+# Crop Customization Module
+# ============================================================
 def crop_customization_page():
     st.title("Customize Crop Parameters")
     st.markdown("Edit the default parameters for PaddyRice (based on AquaCrop-OSPy defaults).")
@@ -220,7 +275,10 @@ def crop_customization_page():
         st.success("Crop parameters updated.")
     return crop_params
 
-# ---------- Main App Navigation ----------
+# ============================================================
+# Main Application
+# ============================================================
+st.sidebar.title("Navigation")
 page = st.sidebar.radio("Select Page", ["Simulation", "Customize Crop"])
 
 if page == "Customize Crop":
@@ -229,23 +287,20 @@ if page == "Customize Crop":
     
 elif page == "Simulation":
     st.title("Integrated Irrigation Simulation")
-    st.markdown(
-        """
+    st.markdown("""
     This simulation integrates:
     - Full weather data (Tmax, Tmin, precipitation, wind, solar radiation) fetched from NASA POWER.
     - NDVI from Sentinel-2 via Google Earth Engine.
     - The real AquaCrop-OSPy model.
-    - NDVI-based crop coefficient (Kcb) adjustment for Rice.
+    - NDVI-based crop coefficient adjustment for Rice.
     - Field area determination via an interactive map.
     
     Configure the simulation parameters below.
-        """
-    )
+    """)
     
     st.sidebar.header("AquaCrop Simulation Settings")
     planting_date = st.sidebar.text_input("Planting Date (YYYY/MM/DD)", value="2023/06/01")
     sim_duration = st.sidebar.number_input("Simulation Duration (days)", min_value=30, value=120, step=10)
-    # Weather will be fetched from NASA POWER
     soil_type = st.sidebar.text_input("Soil Type", value="SandyLoam")
     
     st.sidebar.header("Location & Date Settings for Weather & RS")
@@ -257,7 +312,7 @@ elif page == "Simulation":
     st.sidebar.header("OpenWeatherMap Settings")
     openweather_api_key = st.sidebar.text_input("OpenWeather API Key", type="password")
     
-    # Main Panel: Interactive Map for Field Delineation
+    # Field delineation
     st.markdown("### Delineate Your Field (Optional)")
     m = folium.Map(location=[lat, lon], zoom_start=15)
     from folium.plugins import Draw
@@ -275,14 +330,12 @@ elif page == "Simulation":
         else:
             st.info("No field boundary drawn. Using manual field area.")
     
-    # Fetch full weather data button
     if st.sidebar.button("Fetch Weather Data"):
         weather_df = fetch_full_weather_nasa(lat, lon, rs_start_date, rs_end_date)
         if weather_df is not None:
             st.sidebar.success("Full weather dataset fetched.")
             st.sidebar.write(weather_df.head())
     
-    # Fetch remote sensing data button
     if st.sidebar.button("Fetch Remote Sensing Data"):
         et0_value = fetch_etref_nasa(lat, lon, rs_start_date, rs_end_date)
         ndvi_value = fetch_ndvi(lat, lon, str(rs_start_date), str(rs_end_date))
@@ -291,7 +344,6 @@ elif page == "Simulation":
         if ndvi_value is not None:
             st.sidebar.success(f"NDVI: {ndvi_value:.2f}")
     
-    # Simulation Calculation Trigger
     if st.button("Run Integrated Simulation"):
         weather_df = fetch_full_weather_nasa(lat, lon, rs_start_date, rs_end_date)
         et0_value = fetch_etref_nasa(lat, lon, rs_start_date, rs_end_date)
@@ -299,19 +351,19 @@ elif page == "Simulation":
         if weather_df is None or et0_value is None or ndvi_value is None:
             st.error("Failed to fetch required remote sensing/weather data. Please check inputs.")
         else:
-            aquacrop_out = run_aquacrop_simulation_ospy(weather_df, planting_date, sim_duration, crop_type, soil_type)
+            aquacrop_out = run_aquacrop_simulation_ospy(weather_df, planting_date, sim_duration, "Rice", soil_type)
             if aquacrop_out is None:
                 st.error("Aquacrop simulation failed.")
             else:
-                Kcb = calculate_kcb_from_ndvi(ndvi_value, crop=crop_type)
-                ET_crop_calc, net_irrigation, gross_irrigation = calculate_irrigation(et0_value, Kcb, field_area, efficiency)
+                # Use the AquaCrop-OSPy output crop ET
+                simulated_ET_crop = aquacrop_out['ET_crop']
+                net_irrigation = simulated_ET_crop * field_area * 10
+                gross_irrigation = net_irrigation / (75 / 100.0)  # using a fixed efficiency of 75%
                 
                 st.markdown("### Integrated Irrigation Requirement Results")
                 st.write(f"**Reference ET (ET₀) [NASA POWER]:** {et0_value:.2f} mm/day")
                 st.write(f"**NDVI [Sentinel-2]:** {ndvi_value:.2f}")
-                st.write(f"**Adjusted Crop Coefficient (Kcb) [Rice]:** {Kcb:.2f}")
-                st.write(f"**AquaCrop-OSPy Simulated Crop ET:** {aquacrop_out['ET_crop']:.2f} mm/day")
-                st.write(f"**Calculated Crop ET (ET₀ × Kcb):** {ET_crop_calc:.2f} mm/day")
+                st.write(f"**AquaCrop-OSPy Simulated Crop ET:** {simulated_ET_crop:.2f} mm/day")
                 st.write(f"**Field Area:** {field_area:.2f} hectares")
                 st.write(f"**Net Irrigation Requirement:** {net_irrigation:.2f} m³/day")
                 st.write(f"**Gross Irrigation Requirement:** {gross_irrigation:.2f} m³/day")
