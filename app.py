@@ -12,27 +12,19 @@ from shapely.geometry import shape
 from shapely.ops import transform
 from pyproj import Transformer
 import xlwings as xw
+from google.oauth2 import service_account
 
 # ============================================================
-# OAuth 2.0 Initialization for Google Earth Engine using st.secrets
+# Earth Engine Authentication Using Service Account from st.secrets
 # ============================================================
-if "gg_earth_engine" in st.secrets:
-    credentials = {
-        "client_id": st.secrets["gg_earth_engine"]["client_id"],
-        "project_id": st.secrets["gg_earth_engine"]["project_id"],
-        "auth_uri": st.secrets["gg_earth_engine"]["auth_uri"],
-        "token_uri": st.secrets["gg_earth_engine"]["token_uri"],
-        "auth_provider_x509_cert_url": st.secrets["gg_earth_engine"]["auth_provider_x509_cert_url"],
-        "client_secret": st.secrets["gg_earth_engine"]["client_secret"]
-    }
-    with open("credentials.json", "w") as f:
-        json.dump(credentials, f)
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "credentials.json"
-else:
-    st.error("Google Earth Engine credentials not found in st.secrets.")
+def ee_authentication():
+    # Retrieve service account info from st.secrets
+    service_account_info = st.secrets["gee_service_account"]
+    credentials = service_account.Credentials.from_service_account_info(service_account_info)
+    ee.Initialize(credentials)
 
 try:
-    ee.Initialize(project="h2oh_ai")
+    ee_authentication()
     st.success("Google Earth Engine initialized successfully!")
 except Exception as e:
     st.error("Error initializing Earth Engine: " + str(e))
@@ -153,7 +145,7 @@ def run_aquacrop_simulation_ospy(weather_df, planting_date, sim_duration_days, c
     try:
         wb = xw.Book("Aquacrop_Model.xlsx")
         sht_input = wb.sheets["Inputs"]
-        # Write input parameters. Adjust these cell references to your actual model.
+        # Write input parameters; adjust cell references as per your model.
         sht_input.range("B2").value = sim_start_date
         sht_input.range("B3").value = crop_type
         sht_input.range("B4").value = weather_df.to_csv(index=True)
@@ -183,7 +175,7 @@ def calculate_kcb_from_ndvi(ndvi, crop="Rice"):
 
 def calculate_irrigation(et0, Kcb, field_area, efficiency):
     ET_crop_calc = et0 * Kcb  # mm/day
-    net_irrigation = ET_crop_calc * field_area * 10  # m³/day
+    net_irrigation = ET_crop_calc * field_area * 10  # m³/day (1 mm/ha = 10 m³)
     gross_irrigation = net_irrigation / (efficiency / 100.0)
     return ET_crop_calc, net_irrigation, gross_irrigation
 
@@ -289,9 +281,9 @@ elif page == "Simulation":
     st.title("Integrated Irrigation Simulation")
     st.markdown("""
     This simulation integrates:
-    - Full weather data (Tmax, Tmin, precipitation, wind, solar radiation) fetched from NASA POWER.
+    - Full weather data fetched from NASA POWER.
     - NDVI from Sentinel-2 via Google Earth Engine.
-    - The real AquaCrop-OSPy model.
+    - The AquaCrop-OSPy model.
     - NDVI-based crop coefficient adjustment for Rice.
     - Field area determination via an interactive map.
     
@@ -312,7 +304,6 @@ elif page == "Simulation":
     st.sidebar.header("OpenWeatherMap Settings")
     openweather_api_key = st.sidebar.text_input("OpenWeather API Key", type="password")
     
-    # Field delineation
     st.markdown("### Delineate Your Field (Optional)")
     m = folium.Map(location=[lat, lon], zoom_start=15)
     from folium.plugins import Draw
@@ -355,11 +346,9 @@ elif page == "Simulation":
             if aquacrop_out is None:
                 st.error("Aquacrop simulation failed.")
             else:
-                # Use the AquaCrop-OSPy output crop ET
                 simulated_ET_crop = aquacrop_out['ET_crop']
                 net_irrigation = simulated_ET_crop * field_area * 10
-                gross_irrigation = net_irrigation / (75 / 100.0)  # using a fixed efficiency of 75%
-                
+                gross_irrigation = net_irrigation / (75 / 100.0)  # using 75% efficiency as default
                 st.markdown("### Integrated Irrigation Requirement Results")
                 st.write(f"**Reference ET (ET₀) [NASA POWER]:** {et0_value:.2f} mm/day")
                 st.write(f"**NDVI [Sentinel-2]:** {ndvi_value:.2f}")
