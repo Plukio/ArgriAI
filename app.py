@@ -20,7 +20,9 @@ from google.oauth2 import service_account
 def ee_authentication():
     # Retrieve service account info from st.secrets
     service_account_info = st.secrets["gee_service_account"]
-    credentials = service_account.Credentials.from_service_account_info(service_account_info)
+    credentials = service_account.Credentials.from_service_account_info(
+        service_account_info, scopes=["https://www.googleapis.com/auth/earthengine"]
+    )
     ee.Initialize(credentials)
 
 try:
