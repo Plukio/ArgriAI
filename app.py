@@ -33,7 +33,7 @@ else:
 
 try:
     ee.Authenticate()
-    ee.Initialize()
+    ee.Initialize(project="h2oh_ai")
     st.success("Google Earth Engine initialized successfully!")
 except Exception as e:
     st.error("Error initializing Earth Engine: " + str(e))
