@@ -32,6 +32,7 @@ else:
     st.error("Google Earth Engine credentials not found in st.secrets.")
 
 try:
+    ee.Authenticate()
     ee.Initialize()
     st.success("Google Earth Engine initialized successfully!")
 except Exception as e:
