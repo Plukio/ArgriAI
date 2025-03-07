@@ -93,7 +93,7 @@ def fetch_ndvi_timeseries(geojson, start_date, end_date):
 # ============================================================
 def fetch_soil_moisture_timeseries(geojson, start_date, end_date):
     geometry = ee.Geometry(geojson)
-    collection = ee.ImageCollection("NASA/SMAP/SPL3SMP") \
+    collection = ee.ImageCollection("NASA/SMAP/SPL3SMA") \
                    .filterBounds(geometry) \
                    .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")) \
                    .sort("system:time_start")
