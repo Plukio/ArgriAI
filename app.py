@@ -131,7 +131,7 @@ from folium.plugins import Draw
 draw = Draw(export=True, draw_options={"polyline": False, "circle": False, "marker": False, "circlemarker": False},
             edit_options={"edit": True})
 draw.add_to(m)
-map_data = st_folium(m, width=700, height=500, returned_formats=["geojson"])
+map_data = st_folium(m, width=700, height=500)
 
 # Once the user draws a polygon, display the time series charts
 if map_data and map_data.get("all_drawings"):
