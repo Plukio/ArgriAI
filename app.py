@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 import ee
 import pandas as pd
-from datetime import date, timedelta, datetime
+from datetime import date, timedelta, datetime, timezone
 import folium
 from streamlit_folium import st_folium
 from shapely.geometry import shape
@@ -34,6 +34,11 @@ except Exception as e:
 # Weather Data Module (Meteostat for improved accuracy)
 # ============================================================
 def fetch_weather_meteostat(lat, lon, start_date, end_date):
+    # Ensure start_date and end_date are datetime objects
+    if isinstance(start_date, date) and not isinstance(start_date, datetime):
+        start_date = datetime.combine(start_date, datetime.min.time())
+    if isinstance(end_date, date) and not isinstance(end_date, datetime):
+        end_date = datetime.combine(end_date, datetime.min.time())
     location = Point(lat, lon)
     data = Daily(location, start_date, end_date)
     data = data.fetch()
@@ -73,7 +78,8 @@ def fetch_ndvi_timeseries(geojson, start_date, end_date):
         props = image.getInfo().get('properties', {})
         timestamp = props.get("system:time_start")
         if timestamp is not None:
-            image_date = datetime.utcfromtimestamp(timestamp/1000).strftime("%Y-%m-%d")
+            # Convert using timezone-aware fromtimestamp
+            image_date = datetime.fromtimestamp(timestamp/1000, tz=timezone.utc).strftime("%Y-%m-%d")
             ndvi_value = props.get("NDVI")
             records.append({"Date": image_date, "NDVI": ndvi_value})
     df = pd.DataFrame(records)
@@ -110,7 +116,7 @@ def fetch_soil_moisture_timeseries(geojson, start_date, end_date):
         props = image.getInfo().get('properties', {})
         timestamp = props.get("system:time_start")
         if timestamp is not None:
-            image_date = datetime.utcfromtimestamp(timestamp/1000).strftime("%Y-%m-%d")
+            image_date = datetime.fromtimestamp(timestamp/1000, tz=timezone.utc).strftime("%Y-%m-%d")
             ssm_value = props.get("ssm")
             records.append({"Date": image_date, "Soil_Moisture": ssm_value})
     df = pd.DataFrame(records)
@@ -136,8 +142,8 @@ st.title("Remote Sensing Time Series")
 st.markdown("Draw your field boundary on the map to display NDVI, Temperature, and Soil Moisture time series for the past 3 months.")
 
 # Sidebar: Location defaults
-lat = st.sidebar.number_input("Latitude", value=15.8700, format="%.6f")
-lon = st.sidebar.number_input("Longitude", value=100.9925, format="%.6f")
+lat = st.sidebar.number_input("Latitude", value=10.0, format="%.6f")
+lon = st.sidebar.number_input("Longitude", value=105.0, format="%.6f")
 
 # Create folium map with drawing tool
 m = folium.Map(location=[lat, lon], zoom_start=15)
