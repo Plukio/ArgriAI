@@ -10,3 +10,4 @@ aquacrop
 xlwings
 shapely
 gcloud
+meteostat
