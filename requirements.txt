@@ -12,3 +12,4 @@ shapely
 gcloud
 meteostat
 plotly
+streamlit-elements
