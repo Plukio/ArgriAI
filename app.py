@@ -142,8 +142,9 @@ st.title("Remote Sensing Time Series")
 st.markdown("Draw your field boundary on the map to display NDVI, Temperature, and Soil Moisture time series for the past 3 months.")
 
 # Sidebar: Location defaults
-lat = st.sidebar.number_input("Latitude", value=10.0, format="%.6f")
-lon = st.sidebar.number_input("Longitude", value=105.0, format="%.6f")
+lat = st.sidebar.number_input("Latitude", value=15.8700, format="%.6f")
+lon = st.sidebar.number_input("Longitude", value=100.9925, format="%.6f")
+
 
 # Create folium map with drawing tool
 m = folium.Map(location=[lat, lon], zoom_start=15)
