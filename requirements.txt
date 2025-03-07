@@ -11,3 +11,4 @@ xlwings
 shapely
 gcloud
 meteostat
+plotly
