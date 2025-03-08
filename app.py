@@ -103,10 +103,10 @@ def fetch_soil_moisture_timeseries(geojson, start_date, end_date):
     Computes daily mean soil moisture (swvl1) from ERA5-Land hourly data.
     """
     geometry = ee.Geometry(geojson)
-    collection = ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY") \
-                   .filterBounds(geometry) \
-                   .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")) \
-                   .select("swvl1")
+    collection = (ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY")
+                  .select("swvl1")
+                  .filterBounds(geometry)
+                  .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")))
     
     # Generate a list of dates between start_date and end_date
     nDays = (end_date - start_date).days + 1
