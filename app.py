@@ -3,6 +3,7 @@ import requests
 import ee
 import pandas as pd
 from datetime import date, timedelta, datetime, timezone
+from folium.plugins import Draw
 import folium
 from streamlit_folium import st_folium
 from shapely.geometry import shape
