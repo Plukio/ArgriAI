@@ -162,8 +162,7 @@ if st.session_state.show_map:
 
             # Once we have data, hide the map
             st.session_state.show_map = False
-            st.experimental_rerun()
-
+            st.rerun()  # <-- Updated to st.rerun()
 else:
     # --------------------------------------------------------
     # Show the data/charts, hide the map
@@ -214,4 +213,5 @@ else:
             ]
         )
 
+    # Button to show the map again
     st.button("Select New Area", on_click=lambda: setattr(st.session_state, "show_map", True))
