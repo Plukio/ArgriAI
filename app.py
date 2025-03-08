@@ -160,10 +160,13 @@ lon = st.sidebar.number_input("Longitude", value=100.9925, format="%.6f")
 
 # Create folium map with drawing tool
 m = folium.Map(location=[lat, lon], zoom_start=15)
-from folium.plugins import Draw
-draw = Draw(export=True, draw_options={"polyline": False, "circle": False, "marker": False, "circlemarker": False},
-            edit_options={"edit": True})
+draw = Draw(
+    export=True,
+    draw_options={"polyline": False, "circle": False, "marker": False, "circlemarker": False},
+    edit_options={"edit": True}
+)
 draw.add_to(m)
+
 # Use st_folium to capture drawn geometry
 map_data = st_folium(m, width=700, height=500)
 
@@ -173,82 +176,89 @@ if map_data and map_data.get("all_drawings"):
         geojson = drawings[0]["geometry"]
         field_area = calculate_polygon_area(geojson)
         st.success(f"Field area from drawn polygon: {field_area:.2f} hectares")
-        
+
         # Define time period: past 3 months
         today = date.today()
         three_months_ago = today - timedelta(days=90)
-        
+
         # Fetch time series data
         ndvi_df = fetch_ndvi_timeseries(geojson, three_months_ago, today)
-        # For weather, use the centroid of the polygon
+        from shapely.geometry import shape
         poly = shape(geojson)
         centroid = poly.centroid
         weather_df = fetch_weather_meteostat(centroid.y, centroid.x, three_months_ago, today)
         sm_df = fetch_soil_moisture_timeseries(geojson, three_months_ago, today)
-        
+
         # Create Plotly figures (if data available)
-        if not ndvi_df.empty:
-            ndvi_fig = px.line(ndvi_df, x="Date", y="NDVI", title="NDVI Time Series")
-        else:
-            ndvi_fig = None
-        
+        ndvi_fig = px.line(ndvi_df, x="Date", y="NDVI", title="NDVI Time Series") if not ndvi_df.empty else None
+
         if weather_df is not None and not weather_df.empty:
             weather_df = weather_df.reset_index().rename(columns={"time": "Date"})
             temp_fig = px.line(weather_df, x="Date", y=["tmax", "tmin"], title="Temperature Time Series")
         else:
             temp_fig = None
-        
-        if not sm_df.empty:
-            sm_fig = px.line(sm_df, x="Date", y="Soil_Moisture", title="Soil Moisture Time Series")
-        else:
-            sm_fig = None
-        
+
+        sm_fig = px.line(sm_df, x="Date", y="Soil_Moisture", title="Soil Moisture Time Series") if not sm_df.empty else None
+
         # Get the map HTML for embedding
         map_html = m._repr_html_()
-        
-        # Arrange the map and charts in a grid using Streamlit Elements
+
+        # Arrange the map (left 50%) and the charts stacked vertically (right 50%)
         with elements("layout"):
             mui.Grid(
                 container=True,
                 spacing=2,
                 children=[
+                    # Left half: the map
                     mui.Grid(
                         item=True,
                         xs=6,
                         children=[
-                            html.Iframe(srcDoc=map_html,
-                                        style={"width": "100%", "height": "500px", "border": "none"})
+                            html.Iframe(
+                                srcDoc=map_html,
+                                style={"width": "100%", "height": "500px", "border": "none"}
+                            )
                         ]
                     ),
+                    # Right half: stack charts in vertical order
                     mui.Grid(
                         item=True,
                         xs=6,
                         children=[
-                            mui.Tabs(
-                                value="ndvi",
+                            # We can make another Grid that stacks children in a column
+                            mui.Grid(
+                                container=True,
+                                direction="column",
+                                spacing=2,
                                 children=[
-                                    mui.Tab(
-                                        label="NDVI",
-                                        value="ndvi",
+                                    # NDVI
+                                    mui.Grid(
+                                        item=True,
                                         children=[
-                                            html.Iframe(srcDoc=ndvi_fig.to_html() if ndvi_fig is not None else "<p>No NDVI data available.</p>",
-                                                        style={"width": "100%", "height": "400px", "border": "none"})
+                                            html.Iframe(
+                                                srcDoc=ndvi_fig.to_html() if ndvi_fig else "<p>No NDVI data.</p>",
+                                                style={"width": "100%", "height": "300px", "border": "none"}
+                                            )
                                         ]
                                     ),
-                                    mui.Tab(
-                                        label="Temperature",
-                                        value="temp",
+                                    # Temperature
+                                    mui.Grid(
+                                        item=True,
                                         children=[
-                                            html.Iframe(srcDoc=temp_fig.to_html() if temp_fig is not None else "<p>No Temperature data available.</p>",
-                                                        style={"width": "100%", "height": "400px", "border": "none"})
+                                            html.Iframe(
+                                                srcDoc=temp_fig.to_html() if temp_fig else "<p>No Temperature data.</p>",
+                                                style={"width": "100%", "height": "300px", "border": "none"}
+                                            )
                                         ]
                                     ),
-                                    mui.Tab(
-                                        label="Soil Moisture",
-                                        value="soil",
+                                    # Soil Moisture
+                                    mui.Grid(
+                                        item=True,
                                         children=[
-                                            html.Iframe(srcDoc=sm_fig.to_html() if sm_fig is not None else "<p>No Soil Moisture data available.</p>",
-                                                        style={"width": "100%", "height": "400px", "border": "none"})
+                                            html.Iframe(
+                                                srcDoc=sm_fig.to_html() if sm_fig else "<p>No Soil Moisture data.</p>",
+                                                style={"width": "100%", "height": "300px", "border": "none"}
+                                            )
                                         ]
                                     ),
                                 ]
