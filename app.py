@@ -89,11 +89,12 @@ def fetch_ndvi_timeseries(geojson, start_date, end_date):
     return df
 
 # ============================================================
-# Remote Sensing Module: Soil Moisture Time Series from SMAP via Earth Engine
+# Remote Sensing Module: Soil Moisture Time Series using SMAP via Earth Engine
 # ============================================================
 def fetch_soil_moisture_timeseries(geojson, start_date, end_date):
     geometry = ee.Geometry(geojson)
-    collection = ee.ImageCollection("NASA/SMAP/SPL3SMA") \
+    # Updated asset to "NASA_USDA/HSL/SMAP10KM_soil_moisture"
+    collection = ee.ImageCollection("NASA_USDA/HSL/SMAP10KM_soil_moisture") \
                    .filterBounds(geometry) \
                    .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")) \
                    .sort("system:time_start")
@@ -103,7 +104,7 @@ def fetch_soil_moisture_timeseries(geojson, start_date, end_date):
         mean_ssm = ssm.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=geometry,
-            scale=1000
+            scale=10000  # scale may need adjustment based on dataset resolution
         )
         return image.set('ssm', mean_ssm.get('ssm'))
     
@@ -144,7 +145,6 @@ st.markdown("Draw your field boundary on the map to display NDVI, Temperature, a
 # Sidebar: Location defaults
 lat = st.sidebar.number_input("Latitude", value=15.8700, format="%.6f")
 lon = st.sidebar.number_input("Longitude", value=100.9925, format="%.6f")
-
 
 # Create folium map with drawing tool
 m = folium.Map(location=[lat, lon], zoom_start=15)
