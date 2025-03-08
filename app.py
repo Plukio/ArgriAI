@@ -70,10 +70,16 @@ def fetch_ndvi_timeseries(geojson, start_date, end_date):
         return image.set("NDVI", mean_ndvi.get("NDVI"))
     
     collection = collection.map(compute_ndvi)
-    image_list = collection.toList(collection.size())
+    
+    # Check if the collection is empty
+    collection_size = collection.size().getInfo()
+    if collection_size <= 0:
+        st.info("No NDVI data available for the selected area and time period.")
+        return pd.DataFrame()
+    
+    image_list = collection.toList(collection_size)
     records = []
-    count = image_list.size().getInfo()
-    for i in range(count):
+    for i in range(collection_size):
         image = ee.Image(image_list.get(i))
         props = image.getInfo().get('properties', {})
         timestamp = props.get("system:time_start")
@@ -93,7 +99,7 @@ def fetch_ndvi_timeseries(geojson, start_date, end_date):
 # ============================================================
 def fetch_soil_moisture_timeseries(geojson, start_date, end_date):
     geometry = ee.Geometry(geojson)
-    # Updated asset to "NASA_USDA/HSL/SMAP10KM_soil_moisture"
+    # Use a publicly accessible soil moisture asset
     collection = ee.ImageCollection("NASA_USDA/HSL/SMAP10KM_soil_moisture") \
                    .filterBounds(geometry) \
                    .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")) \
@@ -104,15 +110,21 @@ def fetch_soil_moisture_timeseries(geojson, start_date, end_date):
         mean_ssm = ssm.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=geometry,
-            scale=10000  # scale may need adjustment based on dataset resolution
+            scale=10000  # scale may be adjusted based on dataset resolution
         )
         return image.set('ssm', mean_ssm.get('ssm'))
     
     collection = collection.map(compute_sm)
-    image_list = collection.toList(collection.size())
+    
+    # Check if the collection is empty
+    collection_size = collection.size().getInfo()
+    if collection_size <= 0:
+        st.info("No soil moisture data available for the selected area and time period.")
+        return pd.DataFrame()
+    
+    image_list = collection.toList(collection_size)
     records = []
-    count = image_list.size().getInfo()
-    for i in range(count):
+    for i in range(collection_size):
         image = ee.Image(image_list.get(i))
         props = image.getInfo().get('properties', {})
         timestamp = props.get("system:time_start")
