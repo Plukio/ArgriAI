@@ -98,45 +98,45 @@ def fetch_ndvi_timeseries(geojson, start_date, end_date):
 # Remote Sensing Module: Soil Moisture Time Series using SMAP via Earth Engine
 # ============================================================
 def fetch_soil_moisture_timeseries(geojson, start_date, end_date):
+    """
+    Computes daily mean soil moisture (swvl1) from ERA5-Land hourly data.
+    """
     geometry = ee.Geometry(geojson)
-    # Use a publicly accessible soil moisture asset
-    collection = ee.ImageCollection("NASA_USDA/HSL/SMAP10KM_soil_moisture") \
+    collection = ee.ImageCollection("ECMWF/ERA5_LAND/HOURLY") \
                    .filterBounds(geometry) \
                    .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")) \
-                   .sort("system:time_start")
+                   .select("swvl1")
     
-    def compute_sm(image):
-        ssm = image.select('ssm')
-        mean_ssm = ssm.reduceRegion(
+    # Generate a list of dates between start_date and end_date
+    nDays = (end_date - start_date).days + 1
+    dateList = [start_date + timedelta(days=i) for i in range(nDays)]
+    
+    def compute_daily_mean(date_):
+        date_str = date_.strftime("%Y-%m-%d")
+        next_date_str = (date_ + timedelta(days=1)).strftime("%Y-%m-%d")
+        daily_images = collection.filterDate(date_str, next_date_str)
+        mean_image = daily_images.mean()
+        mean_dict = mean_image.reduceRegion(
             reducer=ee.Reducer.mean(),
             geometry=geometry,
-            scale=10000  # scale may be adjusted based on dataset resolution
+            scale=1000
         )
-        return image.set('ssm', mean_ssm.get('ssm'))
+        return ee.Feature(None, {"date": date_str, "soil_moisture": mean_dict.get("swvl1")})
     
-    collection = collection.map(compute_sm)
-    
-    # Check if the collection is empty
-    collection_size = collection.size().getInfo()
-    if collection_size <= 0:
-        st.info("No soil moisture data available for the selected area and time period.")
-        return pd.DataFrame()
-    
-    image_list = collection.toList(collection_size)
+    features = [compute_daily_mean(d) for d in dateList]
+    fc = ee.FeatureCollection(features)
+    data = fc.getInfo()
     records = []
-    for i in range(collection_size):
-        image = ee.Image(image_list.get(i))
-        props = image.getInfo().get('properties', {})
-        timestamp = props.get("system:time_start")
-        if timestamp is not None:
-            image_date = datetime.fromtimestamp(timestamp/1000, tz=timezone.utc).strftime("%Y-%m-%d")
-            ssm_value = props.get("ssm")
-            records.append({"Date": image_date, "Soil_Moisture": ssm_value})
+    for f in data['features']:
+        date_str = f['properties']['date']
+        soil_moisture = f['properties']['soil_moisture']
+        records.append({"Date": date_str, "Soil_Moisture": soil_moisture})
     df = pd.DataFrame(records)
     if not df.empty:
         df["Date"] = pd.to_datetime(df["Date"])
         df.sort_values("Date", inplace=True)
     return df
+
 
 # ============================================================
 # Field Module: Calculate Polygon Area from GeoJSON (Optional)
