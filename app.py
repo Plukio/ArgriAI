@@ -56,41 +56,65 @@ def calculate_polygon_area(geojson):
     return projected_geom.area / 10000.0  # m² to hectares
 
 def fetch_ndvi_timeseries(geojson, start_date, end_date):
+    """
+    For the given geometry and date range, first retrieves the raw Sentinel-2 SR
+    collection (selecting only bands B4 and B8), then for each day in the range,
+    creates a median composite of that day and computes NDVI from the composite.
+    Returns a pandas DataFrame with one NDVI value per day.
+    """
+
     geometry = ee.Geometry(geojson)
+    # Filter the raw collection to just B4 and B8 (red and NIR)
     collection = (ee.ImageCollection("COPERNICUS/S2_SR")
                   .filterBounds(geometry)
                   .filterDate(start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d"))
                   .filter(ee.Filter.lt("CLOUDY_PIXEL_PERCENTAGE", 20))
+                  .select(["B4", "B8"])
                   .sort("system:time_start"))
-
-    def compute_ndvi(image):
-        ndvi = image.normalizedDifference(["B8", "B4"]).rename("NDVI")
-        mean_ndvi = ndvi.reduceRegion(
-            reducer=ee.Reducer.mean(), geometry=geometry, scale=10
-        )
-        return image.set("NDVI", mean_ndvi.get("NDVI"))
-
-    collection = collection.map(compute_ndvi)
-    size = collection.size().getInfo()
+    
+    # Generate a list of days in the period
+    nDays = (end_date - start_date).days + 1
+    dateList = [start_date + timedelta(days=i) for i in range(nDays)]
+    
+    def composite_for_day(day):
+        # Create start and end dates for the day
+        start = ee.Date(day.strftime("%Y-%m-%d"))
+        end = start.advance(1, "day")
+        # Filter to images within that day
+        daily = collection.filterDate(start, end)
+        # Create a median composite to reduce noise and gaps
+        composite = daily.median()
+        # Compute NDVI from the composite: NDVI = (B8 - B4) / (B8 + B4)
+        ndvi = composite.normalizedDifference(["B8", "B4"]).rename("NDVI")
+        # Set the time property to the start of the day
+        return ndvi.set("system:time_start", start.millis())
+    
+    # Build a new image collection of daily NDVI images
+    daily_ndvi = ee.ImageCollection([composite_for_day(d) for d in dateList])
+    
+    # Get the size and if there is no data, return an empty DataFrame
+    size = daily_ndvi.size().getInfo()
     if size <= 0:
         return pd.DataFrame()
-
-    image_list = collection.toList(size)
+    
+    image_list = daily_ndvi.toList(size)
     records = []
     for i in range(size):
         img = ee.Image(image_list.get(i))
         props = img.getInfo().get("properties", {})
         ts = props.get("system:time_start")
         if ts is not None:
-            dt_str = datetime.fromtimestamp(ts / 1000, tz=timezone.utc).strftime("%Y-%m-%d")
+            # Convert timestamp to a date string
+            dt_str = datetime.fromtimestamp(ts/1000, tz=timezone.utc).strftime("%Y-%m-%d")
             ndvi_val = props.get("NDVI")
             records.append({"Date": dt_str, "NDVI": ndvi_val})
-
+    
     df = pd.DataFrame(records)
     if not df.empty:
         df["Date"] = pd.to_datetime(df["Date"])
         df.sort_values("Date", inplace=True)
     return df
+
 
 def fetch_weather_meteostat(lat, lon, start_date, end_date):
     # Ensure datetime objects
